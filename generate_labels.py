@@ -175,11 +175,40 @@ def extract_sections(ws, profile: dict) -> list[dict]:
     return sections
 
 
+def compare_reference_records(
+    records: list[CableRecord],
+    profile: dict,
+) -> dict:
+    """Compare current workbook records with the profile reference dataset."""
+    ordering = profile["ordering"]
+
+    if ordering.get("type", "numeric") != "reference":
+        return {
+            "reference": set(),
+            "current": {(record[2], record[0]) for record in records},
+            "retained": set(),
+            "removed": set(),
+            "added": {(record[2], record[0]) for record in records},
+        }
+
+    reference = ordering.get("reference", [])
+    reference_keys = {(str(device), int(port)) for device, port in reference}
+    current_keys = {(record[2], record[0]) for record in records}
+
+    return {
+        "reference": reference_keys,
+        "current": current_keys,
+        "retained": reference_keys & current_keys,
+        "removed": reference_keys - current_keys,
+        "added": current_keys - reference_keys,
+    }
+
+
 def order_records_by_profile(
     sections: list[dict],
     profile: dict,
-) -> list[CableRecord]:
-    """Order records according to the profile's configured strategy."""
+) -> tuple[list[CableRecord], dict]:
+    """Order records according to the profile and report dataset changes."""
     ordering = profile["ordering"]
     ordering_type = ordering.get("type", "numeric")
 
@@ -188,8 +217,25 @@ def order_records_by_profile(
         for side in section["sides"]:
             records.extend(side["records"])
 
+    change_report = compare_reference_records(records, profile)
+
+    current_keys = [
+        (record[2], record[0])
+        for record in records
+    ]
+
+    if len(current_keys) != len(set(current_keys)):
+        duplicates = sorted(
+            {key for key in current_keys if current_keys.count(key) > 1},
+            key=lambda key: (key[0], key[1]),
+        )
+        raise ValueError(
+            "Duplicate device/port records found in workbook: "
+            + ", ".join(f"{device}:{port}" for device, port in duplicates)
+        )
+
     if ordering_type == "numeric":
-        return sorted(records, key=lambda record: record[0])
+        return sorted(records, key=lambda record: record[0]), change_report
 
     if ordering_type != "reference":
         raise ValueError(
@@ -266,7 +312,7 @@ def order_records_by_profile(
             "Workbook contains records not present in the ordering profile."
         )
 
-    return result
+    return result, change_report
 
 
 def duplicate_label_groups(
@@ -370,7 +416,10 @@ def generate_document(
             f'No cable sections were found in sheet "{sheet_name}".'
         )
 
-    ordered_records = order_records_by_profile(sections, profile)
+    ordered_records, change_report = order_records_by_profile(
+        sections,
+        profile,
+    )
     label_stream = duplicate_label_groups(ordered_records)
 
     cable_count = len(ordered_records)
@@ -428,7 +477,7 @@ def generate_document(
     output_docx.parent.mkdir(parents=True, exist_ok=True)
     template_doc.save(output_docx)
 
-    return cable_count, label_count
+    return cable_count, label_count, change_report
 
 
 def main() -> None:
@@ -453,7 +502,7 @@ def main() -> None:
     args = parser.parse_args()
     profile = load_profile(args.profile)
 
-    cable_count, label_count = generate_document(
+    cable_count, label_count, change_report = generate_document(
         args.input_xlsx,
         args.output_docx,
         args.template,
@@ -467,6 +516,22 @@ def main() -> None:
     print(f"Cables used:  {cable_count}")
     print(f"Labels:       {label_count}")
     print(f"Tables:       {tables}")
+
+    if change_report["reference"]:
+        print(f"Reference records retained: {len(change_report['retained'])}")
+        print(f"Reference records removed:  {len(change_report['removed'])}")
+        print(f"New records:                {len(change_report['added'])}")
+
+        if change_report["removed"]:
+            print("Removed reference records:")
+            for device, port in sorted(change_report["removed"]):
+                print(f"  - {device}: {port}")
+
+        if change_report["added"]:
+            print("New workbook records:")
+            for device, port in sorted(change_report["added"]):
+                print(f"  + {device}: {port}")
+
     print(f"Output:       {args.output_docx}")
 
 
