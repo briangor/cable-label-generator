@@ -1474,3 +1474,8 @@ ordering:
 
 layout:
   label_group_size: 5
+  labels_per_table: 30
+  label_rows: [0, 2, 4, 6, 8, 10]
+  top_label_starts: [1, 4, 7, 10, 13]
+  bottom_label_starts: [0, 3, 6, 9, 12]
+  pages_per_table: 2

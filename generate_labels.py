@@ -31,13 +31,16 @@ from openpyxl.utils.cell import column_index_from_string
 
 
 # ---------------------------------------------------------------------------
-# Generic label-template layout
+# Generic fallback label-template layout
+#
+# Profiles may override these values. The DOCX template remains the
+# authoritative source for the physical geometry.
 # ---------------------------------------------------------------------------
 
-TOP_LABEL_STARTS = (1, 4, 7, 10, 13)
-BOTTOM_LABEL_STARTS = (0, 3, 6, 9, 12)
-LABEL_ROWS = (0, 2, 4, 6, 8, 10)
-LABELS_PER_TABLE = 30
+DEFAULT_TOP_LABEL_STARTS = (1, 4, 7, 10, 13)
+DEFAULT_BOTTOM_LABEL_STARTS = (0, 3, 6, 9, 12)
+DEFAULT_LABEL_ROWS = (0, 2, 4, 6, 8, 10)
+DEFAULT_LABELS_PER_TABLE = 30
 
 
 # A cable record is:
@@ -381,6 +384,164 @@ def validate_two_labels_per_cable(
 # ---------------------------------------------------------------------------
 
 
+def layout_config(profile: dict) -> dict:
+    """Return validated physical-layout settings from the profile."""
+    layout = profile.get("layout", {})
+
+    label_rows = tuple(
+        int(value)
+        for value in layout.get("label_rows", DEFAULT_LABEL_ROWS)
+    )
+    top_starts = tuple(
+        int(value)
+        for value in layout.get(
+            "top_label_starts",
+            DEFAULT_TOP_LABEL_STARTS,
+        )
+    )
+    bottom_starts = tuple(
+        int(value)
+        for value in layout.get(
+            "bottom_label_starts",
+            DEFAULT_BOTTOM_LABEL_STARTS,
+        )
+    )
+    labels_per_table = int(
+        layout.get("labels_per_table", DEFAULT_LABELS_PER_TABLE)
+    )
+
+    if not label_rows:
+        raise ValueError("layout.label_rows must not be empty.")
+
+    if not top_starts or not bottom_starts:
+        raise ValueError(
+            "layout.top_label_starts and bottom_label_starts "
+            "must not be empty."
+        )
+
+    if len(top_starts) != len(bottom_starts):
+        raise ValueError(
+            "Top and bottom label rows must contain the same "
+            "number of label positions."
+        )
+
+    calculated = len(label_rows) * len(top_starts)
+
+    if labels_per_table != calculated:
+        raise ValueError(
+            "layout.labels_per_table does not match the configured "
+            f"label grid: expected {calculated}, got {labels_per_table}."
+        )
+
+    return {
+        "label_rows": label_rows,
+        "top_label_starts": top_starts,
+        "bottom_label_starts": bottom_starts,
+        "labels_per_table": labels_per_table,
+        "pages_per_table": int(layout.get("pages_per_table", 2)),
+    }
+
+
+def _layout_table_xml(table):
+    """Return table XML with cell content removed for geometry comparison."""
+    xml = deepcopy(table._tbl)
+    namespace = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+
+    for cell in xml.iter(f"{{{namespace}}}tc"):
+        for child in list(cell):
+            if child.tag != f"{{{namespace}}}tcPr":
+                cell.remove(child)
+
+    return xml
+
+
+def validate_template_layout(
+    template_doc: Document,
+    profile: dict,
+) -> None:
+    """Validate that the template can satisfy the configured label grid."""
+    layout = layout_config(profile)
+
+    if not template_doc.tables:
+        raise ValueError("The template DOCX does not contain a table.")
+
+    master = template_doc.tables[0]
+
+    expected_columns = (
+        max(
+            max(layout["top_label_starts"]),
+            max(layout["bottom_label_starts"]),
+        )
+        + 2
+    )
+
+    if len(master.rows) <= max(layout["label_rows"]):
+        raise ValueError(
+            "Template table does not contain all configured label rows."
+        )
+
+    if len(master.columns) < expected_columns:
+        raise ValueError(
+            "Template table does not contain enough columns for the "
+            "configured label positions."
+        )
+
+    if layout["pages_per_table"] <= 0:
+        raise ValueError(
+            "layout.pages_per_table must be greater than zero."
+        )
+
+
+def validate_generated_layout(
+    template_doc: Document,
+    generated_doc: Document,
+    profile: dict,
+    label_count: int,
+) -> None:
+    """Validate generated structure and physical table geometry."""
+    layout = layout_config(profile)
+    labels_per_table = layout["labels_per_table"]
+    expected_tables = math.ceil(label_count / labels_per_table)
+
+    if len(generated_doc.tables) != expected_tables:
+        raise ValueError(
+            "Generated table count does not match label capacity: "
+            f"expected {expected_tables}, got {len(generated_doc.tables)}."
+        )
+
+    page_breaks = sum(
+        1
+        for paragraph in generated_doc.paragraphs
+        if paragraph._p.xpath(".//w:br[@w:type='page']")
+    )
+
+    expected_page_breaks = max(0, expected_tables - 1)
+
+    if page_breaks != expected_page_breaks:
+        raise ValueError(
+            "Generated page-break count is incorrect: "
+            f"expected {expected_page_breaks}, got {page_breaks}."
+        )
+
+    master_xml = _layout_table_xml(template_doc.tables[0])
+
+    for index, table in enumerate(generated_doc.tables, start=1):
+        if _layout_table_xml(table).xml != master_xml.xml:
+            raise ValueError(
+                f"Generated table {index} does not preserve the "
+                "template's physical table geometry."
+            )
+
+    template_section = template_doc.sections[0]._sectPr
+    generated_section = generated_doc.sections[0]._sectPr
+
+    if template_section.xml != generated_section.xml:
+        raise ValueError(
+            "Generated document section/page settings differ from "
+            "the template."
+        )
+
+
 def clear_cell(cell) -> None:
     """Clear cell text while retaining its table/cell formatting."""
     cell.text = ""
@@ -401,27 +562,31 @@ def set_label_cell(cell, text: str, *, bold: bool) -> None:
     run.bold = bold
 
 
-def fill_table(table, labels: list[CableRecord]) -> None:
-    """Fill one 30-label template table."""
-    for row in LABEL_ROWS:
-        starts = (
-            TOP_LABEL_STARTS
-            if row in (0, 4, 8)
-            else BOTTOM_LABEL_STARTS
-        )
+def fill_table(
+    table,
+    labels: list[CableRecord],
+    profile: dict,
+) -> None:
+    """Fill one template table using profile-defined label positions."""
+    layout = layout_config(profile)
+
+    label_rows = layout["label_rows"]
+    top_starts = layout["top_label_starts"]
+    bottom_starts = layout["bottom_label_starts"]
+    labels_per_row = len(top_starts)
+
+    for row_index, row in enumerate(label_rows):
+        starts = top_starts if row_index % 2 == 0 else bottom_starts
 
         for start in starts:
             clear_cell(table.cell(row, start))
             clear_cell(table.cell(row, start + 1))
 
-    for index, item in enumerate(labels[:LABELS_PER_TABLE]):
-        row = LABEL_ROWS[index // 5]
-        starts = (
-            TOP_LABEL_STARTS
-            if row in (0, 4, 8)
-            else BOTTOM_LABEL_STARTS
-        )
-        start = starts[index % 5]
+    for index, item in enumerate(labels[:layout["labels_per_table"]]):
+        row_index = index // labels_per_row
+        row = label_rows[row_index]
+        starts = top_starts if row_index % 2 == 0 else bottom_starts
+        start = starts[index % labels_per_row]
 
         _, peer_label, local_device, local_port = item
 
@@ -485,10 +650,10 @@ def generate_document(
 
     template_doc = Document(template_docx)
 
-    if not template_doc.tables:
-        raise ValueError(
-            "The template DOCX does not contain a table."
-        )
+    validate_template_layout(
+        template_doc,
+        profile,
+    )
 
     template_table_xml = deepcopy(template_doc.tables[0]._tbl)
 
@@ -514,17 +679,24 @@ def generate_document(
             continue
         body.remove(child)
 
+    layout = layout_config(profile)
+    labels_per_table = layout["labels_per_table"]
+
     for table_index in range(
-        math.ceil(len(label_stream) / LABELS_PER_TABLE)
+        math.ceil(len(label_stream) / labels_per_table)
     ):
         table_xml = deepcopy(template_table_xml)
         body.insert(len(body) - 1, table_xml)
 
         table = template_doc.tables[-1]
-        start = table_index * LABELS_PER_TABLE
-        end = start + LABELS_PER_TABLE
+        start = table_index * labels_per_table
+        end = start + labels_per_table
 
-        fill_table(table, label_stream[start:end])
+        fill_table(
+            table,
+            label_stream[start:end],
+            profile,
+        )
 
         if end < len(label_stream):
             body.insert(
@@ -534,6 +706,15 @@ def generate_document(
 
     output_docx.parent.mkdir(parents=True, exist_ok=True)
     template_doc.save(output_docx)
+
+    generated_doc = Document(output_docx)
+
+    validate_generated_layout(
+        Document(template_docx),
+        generated_doc,
+        profile,
+        label_count,
+    )
 
     return cable_count, label_count, change_report
 
@@ -567,7 +748,9 @@ def main() -> None:
         profile,
     )
 
-    tables = math.ceil(label_count / LABELS_PER_TABLE)
+    tables = math.ceil(
+        label_count / layout_config(profile)["labels_per_table"]
+    )
 
     print(f"Profile:      {profile.get('name', args.profile.stem)}")
     print(f"Source sheet: {profile['workbook']['sheet']}")
