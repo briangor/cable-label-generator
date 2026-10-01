@@ -1479,3 +1479,9 @@ layout:
   top_label_starts: [1, 4, 7, 10, 13]
   bottom_label_starts: [0, 3, 6, 9, 12]
   pages_per_table: 2
+
+validation:
+  expected_cables: 730
+  expected_labels: 1460
+  expected_tables: 49
+  expected_pages: 98

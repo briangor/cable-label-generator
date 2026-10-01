@@ -648,6 +648,41 @@ def generate_document(
     cable_count = len(ordered_records)
     label_count = len(label_stream)
 
+    validation = profile.get("validation", {})
+    expected_cables = validation.get("expected_cables")
+    expected_labels = validation.get("expected_labels")
+    expected_tables = validation.get("expected_tables")
+    expected_pages = validation.get("expected_pages")
+
+    if expected_cables is not None and cable_count != int(expected_cables):
+        raise ValueError(
+            "Complete label-set validation failed: "
+            f"expected {expected_cables} cables, got {cable_count}."
+        )
+
+    if expected_labels is not None and label_count != int(expected_labels):
+        raise ValueError(
+            "Complete label-set validation failed: "
+            f"expected {expected_labels} labels, got {label_count}."
+        )
+
+    labels_per_table = layout_config(profile)["labels_per_table"]
+    table_count = math.ceil(label_count / labels_per_table)
+
+    if expected_tables is not None and table_count != int(expected_tables):
+        raise ValueError(
+            "Complete label-set validation failed: "
+            f"expected {expected_tables} tables, got {table_count}."
+        )
+
+    if expected_pages is not None:
+        expected_page_count = table_count * layout_config(profile)["pages_per_table"]
+        if expected_page_count != int(expected_pages):
+            raise ValueError(
+                "Complete label-set validation failed: "
+                f"expected {expected_pages} pages, got {expected_page_count}."
+            )
+
     template_doc = Document(template_docx)
 
     validate_template_layout(
@@ -757,6 +792,7 @@ def main() -> None:
     print(f"Cables used:  {cable_count}")
     print(f"Labels:       {label_count}")
     print(f"Tables:       {tables}")
+    print(f"Pages:        {tables * layout_config(profile)['pages_per_table']}")
 
     if change_report["reference"]:
         print(f"Reference records retained: {len(change_report['retained'])}")
