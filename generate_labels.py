@@ -319,7 +319,16 @@ def duplicate_label_groups(
     records: list[CableRecord],
     group_size: int = 5,
 ) -> list[CableRecord]:
-    """Duplicate each physical label group for the two cable ends."""
+    """
+    Duplicate each physical label group for the two cable ends.
+
+    ``group_size`` describes the physical template arrangement. It does not
+    change the invariant that every cable record must produce exactly two
+    physical labels.
+    """
+    if group_size <= 0:
+        raise ValueError("group_size must be greater than zero.")
+
     stream: list[CableRecord] = []
 
     for start in range(0, len(records), group_size):
@@ -328,6 +337,43 @@ def duplicate_label_groups(
         stream.extend(chunk)
 
     return stream
+
+
+def validate_two_labels_per_cable(
+    records: list[CableRecord],
+    label_stream: list[CableRecord],
+) -> None:
+    """Validate the two-physical-label invariant for every cable."""
+    expected = len(records) * 2
+
+    if len(label_stream) != expected:
+        raise ValueError(
+            "Two-label-per-cable validation failed: "
+            f"{len(records)} cables require {expected} physical labels, "
+            f"but {len(label_stream)} were generated."
+        )
+
+    counts: dict[tuple[str, int], int] = {}
+
+    for record in label_stream:
+        key = (record[2], record[0])
+        counts[key] = counts.get(key, 0) + 1
+
+    for record in records:
+        key = (record[2], record[0])
+        count = counts.get(key, 0)
+
+        if count != 2:
+            raise ValueError(
+                "Two-label-per-cable validation failed for "
+                f"{record[2]} / {record[3]}: expected 2, found {count}."
+            )
+
+    if len(counts) != len(records):
+        raise ValueError(
+            "Two-label-per-cable validation failed: the physical label "
+            "stream contains records that are not present in the cable set."
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -420,7 +466,19 @@ def generate_document(
         sections,
         profile,
     )
-    label_stream = duplicate_label_groups(ordered_records)
+    group_size = int(
+        profile.get("layout", {}).get("label_group_size", 5)
+    )
+
+    label_stream = duplicate_label_groups(
+        ordered_records,
+        group_size=group_size,
+    )
+
+    validate_two_labels_per_cable(
+        ordered_records,
+        label_stream,
+    )
 
     cable_count = len(ordered_records)
     label_count = len(label_stream)

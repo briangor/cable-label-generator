@@ -1471,3 +1471,6 @@ ordering:
     - 47
   unknown_records: after_reference
   unknown_sort: discovered
+
+layout:
+  label_group_size: 5
