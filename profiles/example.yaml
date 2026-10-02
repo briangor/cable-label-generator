@@ -1,0 +1,45 @@
+name: Example Cable Labels
+version: 1
+
+author:
+  name: Brian Gor
+
+document:
+  title: Cable Labels
+
+workbook:
+  sheet: Cables
+
+sections:
+  device_column: A
+  header_match: '^DEV-'
+  header_row_offset: 1
+  header_value: Local Port
+  data_start_offset: 2
+
+sides:
+  - name: left
+    device_column: A
+    port_column: A
+    label_column: B
+  - name: right
+    device_column: I
+    port_column: I
+    label_column: J
+
+ordering:
+  type: numeric
+
+layout:
+  label_group_size: 5
+  labels_per_table: 30
+  label_rows: [0, 2, 4, 6, 8, 10]
+  top_label_starts: [1, 4, 7, 10, 13]
+  bottom_label_starts: [0, 3, 6, 9, 12]
+  pages_per_table: 2
+
+validation:
+  expected_cables: 4
+  expected_labels: 8
+  expected_tables: 1
+  expected_pages: 2

@@ -1,0 +1,241 @@
+import math
+from copy import deepcopy
+from pathlib import Path
+
+from docx import Document
+from docx.enum.table import WD_CELL_VERTICAL_ALIGNMENT
+from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.shared import Pt
+from openpyxl import load_workbook
+
+from .extraction import CableRecord, extract_sections
+from .ordering import order_records_by_profile
+from .validation import (
+    layout_config,
+    validate_generated_layout,
+    validate_template_layout,
+    duplicate_label_groups,
+    validate_two_labels_per_cable,
+)
+
+def clear_cell(cell) -> None:
+    """Clear cell text while retaining its table/cell formatting."""
+    cell.text = ""
+    cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
+
+    if cell.paragraphs:
+        cell.paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.LEFT
+
+
+def set_label_cell(cell, text: str, *, bold: bool) -> None:
+    """Write a label into a preformatted template cell."""
+    clear_cell(cell)
+    paragraph = cell.paragraphs[0]
+    paragraph.alignment = WD_ALIGN_PARAGRAPH.LEFT
+
+    run = paragraph.add_run(text)
+    run.font.size = Pt(9)
+    run.bold = bold
+
+
+def fill_table(
+    table,
+    labels: list[CableRecord],
+    profile: dict,
+) -> None:
+    """Fill one template table using profile-defined label positions."""
+    layout = layout_config(profile)
+
+    label_rows = layout["label_rows"]
+    top_starts = layout["top_label_starts"]
+    bottom_starts = layout["bottom_label_starts"]
+    labels_per_row = len(top_starts)
+
+    for row_index, row in enumerate(label_rows):
+        starts = top_starts if row_index % 2 == 0 else bottom_starts
+
+        for start in starts:
+            clear_cell(table.cell(row, start))
+            clear_cell(table.cell(row, start + 1))
+
+    for index, item in enumerate(labels[:layout["labels_per_table"]]):
+        row_index = index // labels_per_row
+        row = label_rows[row_index]
+        starts = top_starts if row_index % 2 == 0 else bottom_starts
+        start = starts[index % labels_per_row]
+
+        _, peer_label, local_device, local_port = item
+
+        set_label_cell(table.cell(row, start), peer_label, bold=True)
+        set_label_cell(
+            table.cell(row, start + 1),
+            f"{local_device}\n{local_port}",
+            bold=False,
+        )
+
+
+def generate_document(
+    input_xlsx: Path,
+    output_docx: Path,
+    template_docx: Path,
+    profile: dict,
+) -> tuple[int, int, dict]:
+    """Generate the output DOCX and return counts plus the change report."""
+    workbook = load_workbook(
+        input_xlsx,
+        data_only=True,
+        read_only=False,
+    )
+
+    sheet_name = profile["workbook"]["sheet"]
+
+    if sheet_name not in workbook.sheetnames:
+        raise ValueError(
+            f'Sheet "{sheet_name}" was not found. '
+            f"Available sheets: {', '.join(workbook.sheetnames)}"
+        )
+
+    ws = workbook[sheet_name]
+    sections = extract_sections(ws, profile)
+
+    if not sections:
+        raise ValueError(
+            f'No cable sections were found in sheet "{sheet_name}".'
+        )
+
+    ordered_records, change_report = order_records_by_profile(
+        sections,
+        profile,
+    )
+    group_size = int(
+        profile.get("layout", {}).get("label_group_size", 5)
+    )
+
+    label_stream = duplicate_label_groups(
+        ordered_records,
+        group_size=group_size,
+    )
+
+    validate_two_labels_per_cable(
+        ordered_records,
+        label_stream,
+    )
+
+    cable_count = len(ordered_records)
+    label_count = len(label_stream)
+
+    validation = profile.get("validation", {})
+    expected_cables = validation.get("expected_cables")
+    expected_labels = validation.get("expected_labels")
+    expected_tables = validation.get("expected_tables")
+    expected_pages = validation.get("expected_pages")
+
+    if expected_cables is not None and cable_count != int(expected_cables):
+        raise ValueError(
+            "Complete label-set validation failed: "
+            f"expected {expected_cables} cables, got {cable_count}."
+        )
+
+    if expected_labels is not None and label_count != int(expected_labels):
+        raise ValueError(
+            "Complete label-set validation failed: "
+            f"expected {expected_labels} labels, got {label_count}."
+        )
+
+    labels_per_table = layout_config(profile)["labels_per_table"]
+    table_count = math.ceil(label_count / labels_per_table)
+
+    if expected_tables is not None and table_count != int(expected_tables):
+        raise ValueError(
+            "Complete label-set validation failed: "
+            f"expected {expected_tables} tables, got {table_count}."
+        )
+
+    if expected_pages is not None:
+        page_count = table_count * layout_config(profile)["pages_per_table"]
+        if page_count != int(expected_pages):
+            raise ValueError(
+                "Complete label-set validation failed: "
+                f"expected {expected_pages} pages, got {page_count}."
+            )
+
+    template_doc = Document(template_docx)
+
+    author = profile.get("author", {})
+    author_name = author.get("name") if isinstance(author, dict) else author
+    if author_name:
+        template_doc.core_properties.author = str(author_name)
+
+    document_config = profile.get("document", {})
+    if isinstance(document_config, dict) and document_config.get("title"):
+        template_doc.core_properties.title = str(document_config["title"])
+
+    validate_template_layout(
+        template_doc,
+        profile,
+    )
+
+    template_table_xml = deepcopy(template_doc.tables[0]._tbl)
+
+    page_break_xml = None
+    for paragraph in template_doc.paragraphs:
+        if paragraph._p.xpath(
+            ".//w:br[@w:type='page']"
+        ):
+            page_break_xml = deepcopy(paragraph._p)
+            break
+
+    if page_break_xml is None:
+        raise ValueError(
+            "The template DOCX does not contain the expected "
+            "page-break paragraph."
+        )
+
+    body = template_doc._body._element
+    sect_pr = body.sectPr
+
+    for child in list(body):
+        if child is sect_pr:
+            continue
+        body.remove(child)
+
+    layout = layout_config(profile)
+    labels_per_table = layout["labels_per_table"]
+
+    for table_index in range(
+        math.ceil(len(label_stream) / labels_per_table)
+    ):
+        table_xml = deepcopy(template_table_xml)
+        body.insert(len(body) - 1, table_xml)
+
+        table = template_doc.tables[-1]
+        start = table_index * labels_per_table
+        end = start + labels_per_table
+
+        fill_table(
+            table,
+            label_stream[start:end],
+            profile,
+        )
+
+        if end < len(label_stream):
+            body.insert(
+                len(body) - 1,
+                deepcopy(page_break_xml),
+            )
+
+    output_docx.parent.mkdir(parents=True, exist_ok=True)
+    template_doc.save(output_docx)
+
+    generated_doc = Document(output_docx)
+
+    validate_generated_layout(
+        Document(template_docx),
+        generated_doc,
+        profile,
+        label_count,
+    )
+
+    return cable_count, label_count, change_report
+
+
