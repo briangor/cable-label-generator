@@ -11,7 +11,17 @@ from pathlib import Path
 
 from openpyxl import load_workbook
 
-from label_generator import extract_sections, generate_document, layout_config, load_profile
+from label_generator import (
+    duplicate_label_groups,
+    extract_sections,
+    generate_document,
+    layout_config,
+    load_profile,
+    order_records_by_profile,
+    validate_generated_layout,
+    validate_sheet_structure,
+    validate_two_labels_per_cable,
+)
 
 
 def _confirm(prompt: str) -> bool:
@@ -41,13 +51,25 @@ def _discover_workbooks(directory: Path) -> list[Path]:
     )
 
 
-def _select_sheet(workbook: Path, configured_sheet: str | None) -> str:
-    book = load_workbook(workbook, read_only=True, data_only=True)
+def _select_sheet(workbook: Path, configured_sheet: str | None, profile: dict) -> str:
+    book = load_workbook(workbook, read_only=False, data_only=True)
     sheets = book.sheetnames
     selected = sheets[0] if len(sheets) == 1 else _choose(sheets, "Available worksheets")
+
+    profile = deepcopy(profile)
+    profile["workbook"] = deepcopy(profile["workbook"])
+    profile["workbook"]["sheet"] = selected
+
+    try:
+        validate_sheet_structure(book[selected], profile)
+    except ValueError as exc:
+        print(f"\nSelected sheet failed validation: {exc}")
+        raise SystemExit("Generation cancelled.") from exc
+
     if configured_sheet and configured_sheet != selected:
         print(f"Profile default sheet: {configured_sheet}")
     print(f"Selected worksheet: {selected}")
+    print("Sheet structure: valid")
     if not _confirm("Use this worksheet?"):
         raise SystemExit("Generation cancelled.")
     return selected
@@ -56,32 +78,58 @@ def _select_sheet(workbook: Path, configured_sheet: str | None) -> str:
 def _review_inventory(workbook: Path, profile: dict) -> None:
     book = load_workbook(workbook, data_only=True, read_only=False)
     sheet = profile["workbook"]["sheet"]
+    validate_sheet_structure(book[sheet], profile)
     sections = extract_sections(book[sheet], profile)
     if not sections:
         raise ValueError(f'No cable sections were found in sheet "{sheet}".')
 
-    devices: dict[str, int] = {}
+    inventory = {}
     cables = 0
     for section in sections:
         for side in section["sides"]:
             device = side["device"]
             count = len(side["records"])
-            if device:
-                devices[device] = devices.get(device, 0) + count
+            if not device:
+                continue
+            entry = inventory.setdefault(
+                device,
+                {"rack": "-", "switch_type": "-", "switch_name": device, "cables": 0},
+            )
+            entry["cables"] += count
             cables += count
 
-    labels = cables * 2
-    tables = math.ceil(labels / layout_config(profile)["labels_per_table"])
-    pages = tables * layout_config(profile)["pages_per_table"]
+    inventory_config = profile.get("inventory", {})
+    device_pattern = inventory_config.get("device_pattern")
+    if device_pattern:
+        import re
+        pattern = re.compile(device_pattern)
+        for device, entry in inventory.items():
+            match = pattern.search(device)
+            if match:
+                groups = match.groupdict()
+                entry["rack"] = groups.get("rack", entry["rack"])
+                entry["switch_type"] = groups.get("switch_type", entry["switch_type"])
+                entry["switch_name"] = groups.get("switch_name", entry["switch_name"])
 
-    print("\nSource inventory")
-    for device, count in devices.items():
-        print(f"  {device}: {count} cable records")
+    labels = cables * 2
+    layout = layout_config(profile)
+    tables = math.ceil(labels / layout["labels_per_table"])
+    pages = tables * layout["pages_per_table"]
+
+    print("\nSwitch inventory")
+    print("  Rack     Type   Switch      Cables")
+    print("  -------  -----  ----------  ------")
+    for entry in inventory.values():
+        print(
+            f"  {entry['rack']:<7}  {entry['switch_type']:<5}  "
+            f"{entry['switch_name']:<10}  {entry['cables']:>6}"
+        )
+
     print("\nGeneration summary")
-    print(f"  Cables: {cables}")
-    print(f"  Physical labels: {labels}")
-    print(f"  Tables: {tables}")
-    print(f"  Pages: {pages}")
+    print(f"  Total cables:          {cables}")
+    print(f"  Physical labels:       {labels}")
+    print(f"  Expected tables:       {tables}")
+    print(f"  Expected pages:        {pages}")
 
 
 def _interactive(args, profile: dict):
@@ -93,7 +141,7 @@ def _interactive(args, profile: dict):
     if not _confirm(f"Use workbook {workbook.name}?"):
         raise SystemExit("Generation cancelled.")
 
-    selected_sheet = _select_sheet(workbook, profile["workbook"].get("sheet"))
+    selected_sheet = _select_sheet(workbook, profile["workbook"].get("sheet"), profile)
     profile = deepcopy(profile)
     profile["workbook"] = deepcopy(profile["workbook"])
     profile["workbook"]["sheet"] = selected_sheet

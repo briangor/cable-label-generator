@@ -19,7 +19,7 @@ pip install -r requirements-dev.txt
 ## Explicit mode
 
 ```bash
-python generate_labels.py examples/example.xlsx labels.docx \
+python generate_labels.py workbooks/workbook.xlsx labels.docx \
   --template templates/example.docx \
   --profile profiles/example.yaml
 ```

@@ -10,6 +10,9 @@ document:
 workbook:
   sheet: Cables
 
+inventory:
+  device_pattern: '^(?P<rack>DEV-\d+)-(?P<switch_type>DEV)-(?P<switch_name>.+)$'
+
 sections:
   device_column: A
   header_match: '^DEV-'
@@ -22,10 +25,12 @@ sides:
     device_column: A
     port_column: A
     label_column: B
+    header_value: Local Port
   - name: right
     device_column: I
     port_column: I
     label_column: J
+    header_value: Peer Port
 
 ordering:
   type: numeric

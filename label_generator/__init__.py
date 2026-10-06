@@ -7,6 +7,8 @@ from .extraction import (
     extract_sections,
     find_section_starts,
     parse_port_number,
+    validate_sheet_structure,
+
 )
 from .ordering import compare_reference_records, order_records_by_profile
 from .profile import load_profile
@@ -26,6 +28,7 @@ __all__ = [
     "extract_sections",
     "find_section_starts",
     "parse_port_number",
+    "validate_sheet_structure",
     "compare_reference_records",
     "order_records_by_profile",
     "load_profile",
