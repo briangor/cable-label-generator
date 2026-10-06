@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+__author__ = "Brian Gor"
+
 import argparse
 import math
 from copy import deepcopy

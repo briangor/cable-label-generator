@@ -1,5 +1,7 @@
 """Reusable cable-label generation library."""
 
+__author__ = "Brian Gor"
+
 from .extraction import (
     CableRecord,
     cell_value,
