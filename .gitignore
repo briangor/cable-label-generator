@@ -10,7 +10,8 @@ labels_*.pdf
 Labels.docx
 ~*.docx
 *.xlsx
-!examples/example.xlsx
+!workbook/
+!workbook/example.xlsx
 profiles/*
 !profiles/example.yaml
 layout_check/

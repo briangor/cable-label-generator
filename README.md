@@ -19,8 +19,8 @@ pip install -r requirements-dev.txt
 ## Explicit mode
 
 ```bash
-python generate_labels.py workbooks/workbook.xlsx labels.docx \
-  --template templates/example.docx \
+python generate_labels.py workbook/example.xlsx labels.docx \
+  --template templates/template.docx \
   --profile profiles/example.yaml
 ```
 
@@ -30,9 +30,14 @@ python generate_labels.py workbooks/workbook.xlsx labels.docx \
 python generate_labels.py --profile profiles/example.yaml
 ```
 
-Interactive mode lists the available XLSX files, confirms the workbook,
-selects and confirms the worksheet, reviews detected device inventory and
-generation counts, and asks for final confirmation before writing output.
+Interactive mode looks for XLSX workbooks in `workbook/` by default. It lists
+the available files, confirms the workbook, selects and confirms the worksheet,
+reviews detected device inventory and generation counts, and asks for final
+confirmation before writing output.
+
+Place private workbooks in `workbook/`. XLSX files in that directory are
+gitignored by default, while the public `workbook/example.xlsx` remains tracked
+as the sample workbook.
 
 If an output filename is not supplied, `labels_YYYYMMDD-HHMM.docx` is used.
 
@@ -42,7 +47,8 @@ See `docs/architecture.md`. Workbook-specific behavior belongs in YAML
 profiles rather than in the reusable Python modules.
 
 Private workbooks, templates, and infrastructure inventories should remain
-outside a public repository.
+outside a public repository. The `workbook/` directory is intended for local
+user workbooks and is gitignored except for the public sample workbook.
 
 ## License
 

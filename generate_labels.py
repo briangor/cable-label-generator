@@ -168,7 +168,7 @@ def main() -> None:
     parser.add_argument(
         "--template",
         type=Path,
-        default=Path("templates/example.docx"),
+        default=Path("templates/template.docx"),
         help="DOCX used as the formatting/layout template.",
     )
     parser.add_argument(
@@ -180,8 +180,8 @@ def main() -> None:
     parser.add_argument(
         "--workbook-dir",
         type=Path,
-        default=Path("."),
-        help="Directory searched for XLSX files in interactive mode.",
+        default=Path("workbook"),
+        help="Directory searched for XLSX files in interactive mode (default: workbook/).",
     )
 
     args = parser.parse_args()
