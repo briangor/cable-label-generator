@@ -47,6 +47,17 @@ def _choose(items: list[str], title: str) -> str:
         print("Please select one of the listed numbers.")
 
 
+def _default_output_path() -> Path:
+    """Return the standard generated-label output path."""
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M")
+    return Path("labels") / f"labels_{timestamp}.docx"
+
+
+def _resolve_output_path(output: Path | None) -> Path:
+    """Use an explicit output path or the standard labels/ timestamp path."""
+    return output if output is not None else _default_output_path()
+
+
 def _discover_workbooks(directory: Path) -> list[Path]:
     return sorted(
         p for p in directory.glob("*.xlsx") if not p.name.startswith("~$")
@@ -153,9 +164,7 @@ def _interactive(args, profile: dict):
     if not _confirm("Proceed with generation?"):
         raise SystemExit("Generation cancelled.")
 
-    output = args.output_docx or Path(
-        f"labels_{datetime.now().strftime('%Y%m%d-%H%M')}.docx"
-    )
+    output = _resolve_output_path(args.output_docx)
     return workbook, output, args.template, profile
 
 
@@ -191,9 +200,7 @@ def main() -> None:
         input_xlsx, output_docx, template, profile = _interactive(args, profile)
     else:
         input_xlsx = args.input_xlsx
-        output_docx = args.output_docx or Path(
-            f"labels_{datetime.now().strftime('%Y%m%d-%H%M')}.docx"
-        )
+        output_docx = _resolve_output_path(args.output_docx)
         template = args.template
 
     cable_count, label_count, change_report = generate_document(

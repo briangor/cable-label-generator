@@ -4,6 +4,9 @@ __pycache__/
 *.log
 labels_*.docx
 labels_*.pdf
+labels-*.docx
+labels/*.docx 
+labels/*.pdf
 *_generated.docx
 *-generated.docx
 *_generated.pdf

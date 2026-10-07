@@ -39,7 +39,14 @@ Place private workbooks in `workbook/`. XLSX files in that directory are
 gitignored by default, while the public `workbook/example.xlsx` remains tracked
 as the sample workbook.
 
-If an output filename is not supplied, `labels_YYYYMMDD-HHMM.docx` is used.
+If an output filename is not supplied, the generated document is saved under
+`labels/` using the `labels_YYYYMMDD-HHMM.docx` naming scheme. The same
+default applies to interactive and explicit CLI generation. An explicitly
+supplied output path is respected unchanged.
+
+Generated DOCX files include document metadata such as title, author, subject,
+keywords/tags, comments, category, and last modified by. These values can be
+configured in the selected YAML profile.
 
 ## Architecture
 
