@@ -18,4 +18,4 @@ Labels.docx
 profiles/*
 !profiles/example.yaml
 layout_check/
-
+.venv/*
