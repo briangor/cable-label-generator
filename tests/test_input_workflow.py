@@ -64,3 +64,32 @@ def test_declining_final_confirmation_does_not_generate_docx(tmp_path, monkeypat
 
     assert generate_calls == []
     assert not args.output_docx.exists()
+
+
+def test_interactive_custom_suffix_is_used(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    import generate_labels
+
+    profile = load_profile(PROFILE)
+    args = SimpleNamespace(
+        workbook_dir=WORKBOOK.parent,
+        output_docx=None,
+        suffix=None,
+        template=ROOT / "templates" / "template.docx",
+    )
+
+    confirmations = iter([True, True, True])
+    monkeypatch.setattr(generate_labels, "_confirm", lambda prompt: next(confirmations))
+    monkeypatch.setattr(generate_labels, "_choose", lambda items, title: items[0])
+    monkeypatch.setattr("builtins.input", lambda prompt: "NBO")
+
+    workbook, output, template, selected_profile = generate_labels._interactive(
+        args, profile
+    )
+
+    assert workbook == WORKBOOK
+    assert output.parent == Path("labels")
+    assert output.name.endswith("_NBO.docx")
+    assert template == args.template
+    assert selected_profile["workbook"]["sheet"] == profile["workbook"]["sheet"]

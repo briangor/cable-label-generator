@@ -7,6 +7,7 @@ __author__ = "Brian Gor"
 
 import argparse
 import math
+import re
 from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
@@ -47,15 +48,41 @@ def _choose(items: list[str], title: str) -> str:
         print("Please select one of the listed numbers.")
 
 
-def _default_output_path() -> Path:
+def _sanitize_filename_suffix(value: str | None) -> str | None:
+    """Return a safe filename suffix, or None when no suffix is supplied."""
+    if value is None:
+        return None
+
+    suffix = value.strip()
+    if not suffix:
+        return None
+
+    suffix = re.sub(r"[^A-Za-z0-9._-]+", "_", suffix)
+    suffix = re.sub(r"_+", "_", suffix).strip("._-")
+    if not suffix:
+        raise ValueError("Filename suffix must contain at least one valid character.")
+
+    return suffix
+
+
+def _default_output_path(suffix: str | None = None) -> Path:
     """Return the standard generated-label output path."""
     timestamp = datetime.now().strftime("%Y%m%d-%H%M")
-    return Path("labels") / f"labels_{timestamp}.docx"
+    safe_suffix = _sanitize_filename_suffix(suffix)
+    filename = f"labels_{timestamp}"
+    if safe_suffix:
+        filename += f"_{safe_suffix}"
+    return Path("labels") / f"{filename}.docx"
 
 
-def _resolve_output_path(output: Path | None) -> Path:
+def _resolve_output_path(
+    output: Path | None,
+    suffix: str | None = None,
+) -> Path:
     """Use an explicit output path or the standard labels/ timestamp path."""
-    return output if output is not None else _default_output_path()
+    if output is not None:
+        return output
+    return _default_output_path(suffix)
 
 
 def _discover_workbooks(directory: Path) -> list[Path]:
@@ -164,7 +191,13 @@ def _interactive(args, profile: dict):
     if not _confirm("Proceed with generation?"):
         raise SystemExit("Generation cancelled.")
 
-    output = _resolve_output_path(args.output_docx)
+    suffix = args.suffix
+    if args.output_docx is None and suffix is None:
+        suffix = input(
+            "Custom filename suffix (optional, e.g. NBO or KIS): "
+        ).strip() or None
+
+    output = _resolve_output_path(args.output_docx, suffix)
     return workbook, output, args.template, profile
 
 
@@ -195,6 +228,13 @@ def _build_parser() -> argparse.ArgumentParser:
         default=Path("workbook"),
         help="Directory searched for XLSX files in interactive mode (default: workbook/).",
     )
+    parser.add_argument(
+        "--suffix",
+        help=(
+            "Optional suffix appended to the default filename, e.g. "
+            "--suffix LMU -> labels_YYYYMMDD-HHMM_LMU.docx."
+        ),
+    )
     return parser
 
 
@@ -207,7 +247,7 @@ def main() -> None:
         input_xlsx, output_docx, template, profile = _interactive(args, profile)
     else:
         input_xlsx = args.input_xlsx
-        output_docx = _resolve_output_path(args.output_docx)
+        output_docx = _resolve_output_path(args.output_docx, args.suffix)
         template = args.template
 
     cable_count, label_count, change_report = generate_document(

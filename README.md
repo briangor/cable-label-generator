@@ -40,13 +40,22 @@ gitignored by default, while the public `workbook/example.xlsx` remains tracked
 as the sample workbook.
 
 If an output filename is not supplied, the generated document is saved under
-`labels/` using the `labels_YYYYMMDD-HHMM.docx` naming scheme. The same
-default applies to interactive and explicit CLI generation. An explicitly
-supplied output path is respected unchanged.
+`labels/` using the `labels_YYYYMMDD-HHMM.docx` naming scheme. You can append
+a custom suffix with `--suffix`, for example:
+
+```bash
+python generate_labels.py workbook/example.xlsx --suffix NBO
+```
+
+which produces `labels/labels_YYYYMMDD-HHMM_NBO.docx`. In interactive mode,
+press Enter at the optional suffix prompt to keep the default name. Unsafe
+filename characters are normalized to underscores. An explicitly supplied
+output path is respected unchanged.
 
 Generated DOCX files include document metadata such as title, author, subject,
 keywords/tags, comments, category, and last modified by. These values can be
-configured in the selected YAML profile.
+configured in the selected YAML profile. During generation, a terminal progress
+bar reports completed tables.
 
 ## Architecture
 

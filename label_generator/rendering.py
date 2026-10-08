@@ -7,6 +7,7 @@ from docx.enum.table import WD_CELL_VERTICAL_ALIGNMENT
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.shared import Pt
 from openpyxl import load_workbook
+from tqdm import tqdm
 
 from .extraction import CableRecord, extract_sections
 from .ordering import order_records_by_profile
@@ -21,7 +22,6 @@ from .validation import (
 def clear_cell(cell) -> None:
     """Clear cell text while retaining its table/cell formatting."""
     cell.text = ""
-    # cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
 
     if cell.paragraphs:
         cell.paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.LEFT
@@ -118,6 +118,8 @@ def generate_document(
     output_docx: Path,
     template_docx: Path,
     profile: dict,
+    *,
+    show_progress: bool = True,
 ) -> tuple[int, int, dict]:
     """Generate the output DOCX and return counts plus the change report."""
     workbook = load_workbook(
@@ -234,9 +236,17 @@ def generate_document(
     layout = layout_config(profile)
     labels_per_table = layout["labels_per_table"]
 
-    for table_index in range(
-        math.ceil(len(label_stream) / labels_per_table)
-    ):
+    table_count = math.ceil(len(label_stream) / labels_per_table)
+    table_indices = range(table_count)
+    progress = tqdm(
+        table_indices,
+        total=table_count,
+        desc="Generating labels",
+        unit="table",
+        disable=not show_progress,
+    )
+
+    for table_index in progress:
         table_xml = deepcopy(template_table_xml)
         body.insert(len(body) - 1, table_xml)
 

@@ -104,8 +104,26 @@ def test_default_output_path_uses_labels_directory_and_timestamp_pattern(monkeyp
 def test_explicit_output_path_is_preserved(tmp_path):
     output = tmp_path / "custom-labels.docx"
 
-    assert generate_labels._resolve_output_path(output) == output
+    assert generate_labels._resolve_output_path(output, "NBO") == output
 
+
+def test_default_output_path_supports_custom_suffix(monkeypatch):
+    class FixedDateTime:
+        @classmethod
+        def now(cls):
+            from datetime import datetime
+            return datetime(2026, 10, 7, 9, 55)
+
+    monkeypatch.setattr(generate_labels, "datetime", FixedDateTime)
+
+    assert generate_labels._resolve_output_path(None, "NBO") == (
+        generate_labels.Path("labels/labels_20261007-0955_NBO.docx")
+    )
+
+def test_filename_suffix_is_sanitized():
+    assert generate_labels._sanitize_filename_suffix("NBO / KIS") == "NBO_KIS"
+    assert generate_labels._sanitize_filename_suffix("  KIS  ") == "KIS"
+    assert generate_labels._sanitize_filename_suffix("") is None
 
 def test_generated_document_metadata(tmp_path, synthetic_workbook):
     profile = make_profile()

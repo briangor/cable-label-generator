@@ -11,3 +11,10 @@ def test_bare_command_uses_example_profile_by_default():
     assert args.profile == Path("profiles/example.yaml")
     assert args.template == Path("templates/template.docx")
     assert args.workbook_dir == Path("workbook")
+    assert args.suffix is None
+
+
+def test_suffix_option_is_parsed():
+    args = _build_parser().parse_args(["--suffix", "NBO"])
+
+    assert args.suffix == "NBO"
