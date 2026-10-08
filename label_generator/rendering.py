@@ -21,7 +21,7 @@ from .validation import (
 def clear_cell(cell) -> None:
     """Clear cell text while retaining its table/cell formatting."""
     cell.text = ""
-    cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
+    # cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
 
     if cell.paragraphs:
         cell.paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.LEFT

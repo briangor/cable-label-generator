@@ -27,10 +27,10 @@ python generate_labels.py workbook/example.xlsx labels.docx \
 ## Interactive mode
 
 ```bash
-python generate_labels.py --profile profiles/example.yaml
+python generate_labels.py
 ```
 
-Interactive mode looks for XLSX workbooks in `workbook/` by default. It lists
+Interactive mode uses `profiles/example.yaml` by default and looks for XLSX workbooks in `workbook/` by default. Use `--profile` when working with a different private or project-specific profile. It lists
 the available files, confirms the workbook, selects and confirms the worksheet,
 reviews detected device inventory and generation counts, and asks for final
 confirmation before writing output.

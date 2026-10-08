@@ -48,7 +48,7 @@ layout:
   pages_per_table: 2
 
 validation:
-  expected_cables: 4
-  expected_labels: 8
+  expected_cables: 6
+  expected_labels: 12
   expected_tables: 1
   expected_pages: 2

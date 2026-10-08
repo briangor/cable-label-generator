@@ -168,7 +168,7 @@ def _interactive(args, profile: dict):
     return workbook, output, args.template, profile
 
 
-def main() -> None:
+def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Generate cable labels from an XLSX workbook."
     )
@@ -183,8 +183,11 @@ def main() -> None:
     parser.add_argument(
         "--profile",
         type=Path,
-        required=True,
-        help="YAML profile describing the workbook structure and ordering.",
+        default=Path("profiles/example.yaml"),
+        help=(
+            "YAML profile describing the workbook structure and ordering "
+            "(default: profiles/example.yaml)."
+        ),
     )
     parser.add_argument(
         "--workbook-dir",
@@ -192,7 +195,11 @@ def main() -> None:
         default=Path("workbook"),
         help="Directory searched for XLSX files in interactive mode (default: workbook/).",
     )
+    return parser
 
+
+def main() -> None:
+    parser = _build_parser()
     args = parser.parse_args()
     profile = load_profile(args.profile)
 

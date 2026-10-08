@@ -15,7 +15,7 @@ def test_example_profile_layout_and_expected_set():
     assert layout["label_rows"] == (0, 2, 4, 6, 8, 10)
     assert layout["top_label_starts"] == (1, 4, 7, 10, 13)
     assert layout["bottom_label_starts"] == (0, 3, 6, 9, 12)
-    assert profile["validation"]["expected_cables"] == 4
-    assert profile["validation"]["expected_labels"] == 8
+    assert profile["validation"]["expected_cables"] == 6
+    assert profile["validation"]["expected_labels"] == 12
     assert profile["validation"]["expected_tables"] == 1
     assert profile["validation"]["expected_pages"] == 2
