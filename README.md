@@ -30,10 +30,13 @@ python generate_labels.py workbook/example.xlsx labels.docx \
 python generate_labels.py
 ```
 
-Interactive mode uses `profiles/example.yaml` by default and looks for XLSX workbooks in `workbook/` by default. Use `--profile` when working with a different private or project-specific profile. It lists
-the available files, confirms the workbook, selects and confirms the worksheet,
-reviews detected device inventory and generation counts, and asks for final
-confirmation before writing output.
+Interactive mode looks for XLSX workbooks in `workbook/` and YAML profiles in
+`profiles/` by default. It asks you to choose a workbook, worksheet, and then a
+profile compatible with that worksheet. Profiles that fail worksheet-structure
+validation are not offered. It then reviews detected device inventory and
+generation counts, and asks for final confirmation before writing output.
+Use `--profile-dir` to search a different profile directory. In explicit mode,
+`--profile` selects the profile; if omitted, `profiles/example.yaml` is used.
 
 Place private workbooks in `workbook/`. XLSX files in that directory are
 gitignored by default, while the public `workbook/example.xlsx` remains tracked

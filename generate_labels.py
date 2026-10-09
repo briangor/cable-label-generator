@@ -91,28 +91,57 @@ def _discover_workbooks(directory: Path) -> list[Path]:
     )
 
 
-def _select_sheet(workbook: Path, configured_sheet: str | None, profile: dict) -> str:
+def _select_sheet(workbook: Path) -> str:
+    """Choose a worksheet without assuming which profile describes it."""
     book = load_workbook(workbook, read_only=False, data_only=True)
     sheets = book.sheetnames
     selected = sheets[0] if len(sheets) == 1 else _choose(sheets, "Available worksheets")
-
-    profile = deepcopy(profile)
-    profile["workbook"] = deepcopy(profile["workbook"])
-    profile["workbook"]["sheet"] = selected
-
-    try:
-        validate_sheet_structure(book[selected], profile)
-    except ValueError as exc:
-        print(f"\nSelected sheet failed validation: {exc}")
-        raise SystemExit("Generation cancelled.") from exc
-
-    if configured_sheet and configured_sheet != selected:
-        print(f"Profile default sheet: {configured_sheet}")
     print(f"Selected worksheet: {selected}")
-    print("Sheet structure: valid")
     if not _confirm("Use this worksheet?"):
         raise SystemExit("Generation cancelled.")
     return selected
+
+
+def _discover_profiles(directory: Path) -> list[Path]:
+    """Find YAML profiles available for interactive generation."""
+    return sorted(
+        [*directory.glob("*.yaml"), *directory.glob("*.yml")],
+        key=lambda path: path.name.lower(),
+    )
+
+
+def _select_profile(directory: Path, workbook: Path, sheet: str) -> dict:
+    """Choose a profile that can validate the selected worksheet."""
+    profile_paths = _discover_profiles(directory)
+    if not profile_paths:
+        raise ValueError(f"No YAML profiles found in {directory}.")
+
+    book = load_workbook(workbook, read_only=False, data_only=True)
+    compatible = []
+    for path in profile_paths:
+        try:
+            candidate = load_profile(path)
+            candidate = deepcopy(candidate)
+            candidate["workbook"] = deepcopy(candidate["workbook"])
+            candidate["workbook"]["sheet"] = sheet
+            validate_sheet_structure(book[sheet], candidate)
+            label = f"{path.name} ({candidate.get('name', path.stem)})"
+            compatible.append((label, candidate))
+        except (ValueError, KeyError, TypeError):
+            continue
+
+    if not compatible:
+        raise ValueError(
+            f'No profiles in "{directory}" match worksheet "{sheet}". '
+            "Check the profile's section and side configuration."
+        )
+
+    labels = [label for label, _ in compatible]
+    selected_label = _choose(labels, f"Profiles compatible with worksheet {sheet}")
+    profile = next(profile for label, profile in compatible if label == selected_label)
+    print(f"Selected profile: {selected_label}")
+    print("Sheet structure: valid for selected profile")
+    return profile
 
 
 def _review_inventory(workbook: Path, profile: dict) -> None:
@@ -172,7 +201,7 @@ def _review_inventory(workbook: Path, profile: dict) -> None:
     print(f"  Expected pages:        {pages}")
 
 
-def _interactive(args, profile: dict):
+def _interactive(args):
     workbooks = _discover_workbooks(args.workbook_dir)
     workbook = args.workbook_dir / _choose(
         [p.name for p in workbooks],
@@ -181,11 +210,8 @@ def _interactive(args, profile: dict):
     if not _confirm(f"Use workbook {workbook.name}?"):
         raise SystemExit("Generation cancelled.")
 
-    selected_sheet = _select_sheet(workbook, profile["workbook"].get("sheet"), profile)
-    profile = deepcopy(profile)
-    profile["workbook"] = deepcopy(profile["workbook"])
-    profile["workbook"]["sheet"] = selected_sheet
-
+    selected_sheet = _select_sheet(workbook)
+    profile = _select_profile(args.profile_dir, workbook, selected_sheet)
     _review_inventory(workbook, profile)
 
     if not _confirm("Proceed with generation?"):
@@ -216,11 +242,17 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--profile",
         type=Path,
-        default=Path("profiles/example.yaml"),
+        default=None,
         help=(
-            "YAML profile describing the workbook structure and ordering "
-            "(default: profiles/example.yaml)."
+            "YAML profile for explicit/non-interactive mode "
+            "(default: profiles/example.yaml). Interactive mode prompts for a profile."
         ),
+    )
+    parser.add_argument(
+        "--profile-dir",
+        type=Path,
+        default=Path("profiles"),
+        help="Directory containing YAML profiles for interactive selection (default: profiles/).",
     )
     parser.add_argument(
         "--workbook-dir",
@@ -232,7 +264,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "--suffix",
         help=(
             "Optional suffix appended to the default filename, e.g. "
-            "--suffix LMU -> labels_YYYYMMDD-HHMM_LMU.docx."
+            "--suffix NBO -> labels_YYYYMMDD-HHMM_NBO.docx."
         ),
     )
     return parser
@@ -241,11 +273,11 @@ def _build_parser() -> argparse.ArgumentParser:
 def main() -> None:
     parser = _build_parser()
     args = parser.parse_args()
-    profile = load_profile(args.profile)
-
     if args.input_xlsx is None:
-        input_xlsx, output_docx, template, profile = _interactive(args, profile)
+        input_xlsx, output_docx, template, profile = _interactive(args)
     else:
+        profile_path = args.profile or Path("profiles/example.yaml")
+        profile = load_profile(profile_path)
         input_xlsx = args.input_xlsx
         output_docx = _resolve_output_path(args.output_docx, args.suffix)
         template = args.template
@@ -255,7 +287,7 @@ def main() -> None:
     )
 
     tables = math.ceil(label_count / layout_config(profile)["labels_per_table"])
-    print(f"\nProfile:      {profile.get('name', args.profile.stem)}")
+    print(f"\nProfile:      {profile.get('name', (args.profile or Path('profiles/example.yaml')).stem)}")
     print(f"Source sheet: {profile['workbook']['sheet']}")
     print(f"Cables used:  {cable_count}")
     print(f"Labels:       {label_count}")

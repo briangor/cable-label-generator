@@ -8,7 +8,8 @@ def test_bare_command_uses_example_profile_by_default():
 
     assert args.input_xlsx is None
     assert args.output_docx is None
-    assert args.profile == Path("profiles/example.yaml")
+    assert args.profile is None
+    assert args.profile_dir == Path("profiles")
     assert args.template == Path("templates/template.docx")
     assert args.workbook_dir == Path("workbook")
     assert args.suffix is None
