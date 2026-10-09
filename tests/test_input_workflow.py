@@ -126,3 +126,53 @@ def test_profile_selection_rejects_profiles_that_do_not_match_sheet(tmp_path):
         assert 'Unrelated' in str(exc)
     else:
         raise AssertionError("An incompatible profile should not be selectable")
+
+
+def test_interactive_no_matching_profile_offers_worksheet_reselection(
+    tmp_path, monkeypatch, capsys
+):
+    from types import SimpleNamespace
+
+    import generate_labels
+
+    args = SimpleNamespace(
+        workbook_dir=WORKBOOK.parent,
+        profile_dir=tmp_path / "profiles",
+        output_docx=None,
+        suffix=None,
+        template=ROOT / "templates" / "template.docx",
+    )
+    args.profile_dir.mkdir()
+
+    sheets = iter(["3.4.2 KIS Cable", "Example Cables"])
+    monkeypatch.setattr(generate_labels, "_choose", lambda items, title: items[0])
+    monkeypatch.setattr(generate_labels, "_select_sheet", lambda workbook: next(sheets))
+
+    profile = load_profile(PROFILE)
+    profile["workbook"]["sheet"] = "Example Cables"
+    attempts = []
+
+    def select_profile(directory, workbook, sheet):
+        attempts.append(sheet)
+        if sheet == "3.4.2 KIS Cable":
+            raise ValueError(
+                'No profiles in "profiles" match worksheet "3.4.2 KIS Cable".'
+            )
+        return profile
+
+    monkeypatch.setattr(generate_labels, "_select_profile", select_profile)
+    confirmations = iter([True, True, True])  # workbook, retry, final generation
+    monkeypatch.setattr(
+        generate_labels, "_confirm", lambda prompt: next(confirmations)
+    )
+    monkeypatch.setattr(generate_labels, "_review_inventory", lambda *args: None)
+    monkeypatch.setattr("builtins.input", lambda prompt: "")
+
+    workbook, output, template, selected_profile = generate_labels._interactive(args)
+
+    output_text = capsys.readouterr().out
+    assert "Profile selection unavailable" in output_text
+    assert "No labels have been generated" in output_text
+    assert "choose a different worksheet" in output_text
+    assert attempts == ["3.4.2 KIS Cable", "Example Cables"]
+    assert selected_profile["workbook"]["sheet"] == "Example Cables"

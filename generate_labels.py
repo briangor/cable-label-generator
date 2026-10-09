@@ -210,8 +210,21 @@ def _interactive(args):
     if not _confirm(f"Use workbook {workbook.name}?"):
         raise SystemExit("Generation cancelled.")
 
-    selected_sheet = _select_sheet(workbook)
-    profile = _select_profile(args.profile_dir, workbook, selected_sheet)
+    while True:
+        selected_sheet = _select_sheet(workbook)
+        try:
+            profile = _select_profile(args.profile_dir, workbook, selected_sheet)
+        except ValueError as exc:
+            print(f"\nProfile selection unavailable: {exc}")
+            print(
+                "No labels have been generated. Add a compatible YAML profile "
+                f"to {args.profile_dir}, or choose a different worksheet."
+            )
+            if _confirm("Return to worksheet selection?"):
+                continue
+            raise SystemExit("Generation cancelled. No compatible profile selected.") from None
+        break
+
     _review_inventory(workbook, profile)
 
     if not _confirm("Proceed with generation?"):
