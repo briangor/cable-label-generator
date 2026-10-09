@@ -17,5 +17,6 @@ Labels.docx
 !workbook/example.xlsx
 profiles/*
 !profiles/example.yaml
+!profiles/README.md
 layout_check/
 .venv/*
